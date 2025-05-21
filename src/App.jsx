@@ -25,8 +25,15 @@ function InvoicePage() {
 	const { state } = useLocation()
 	const invoiceIndex = state?.invoiceIndex
 
+	// Déterminer le numéro par défaut à partir de l'historique
+	const historyList = loadHistory()
+	const defaultNumber = `Fact-${String(historyList.length + 1).padStart(
+		4,
+		'0'
+	)}`
+
+	const [invoiceNumber, setInvoiceNumber] = useState(defaultNumber)
 	const [logo, setLogo] = useState(null)
-	const [invoiceNumber, setInvoiceNumber] = useState('1')
 	const [currency, setCurrency] = useState('USD ($)')
 	const [clientData, setClientData] = useState({
 		issuer: '',
@@ -47,22 +54,21 @@ function InvoicePage() {
 	const [taxRate, setTaxRate] = useState(0)
 	const [amountPaid, setAmountPaid] = useState(0)
 
-	// Totaux calculés
+	// Calculs financiers
 	const subtotal = items.reduce((sum, i) => sum + i.quantity * i.rate, 0)
 	const tax = (subtotal * taxRate) / 100
 	const total = subtotal + tax
 	const balanceDue = total - amountPaid
 
-	// Sauvegarde des items
+	// Persistance des items
 	useEffect(() => {
 		localStorage.setItem('invoiceItems', JSON.stringify(items))
 	}, [items])
 
-	// Pré-remplissage si on vient de l'historique
+	// Si on vient de l'historique, on pré-remplit le formulaire
 	useEffect(() => {
 		if (invoiceIndex != null) {
-			const history = loadHistory()
-			const inv = history[invoiceIndex]
+			const inv = historyList[invoiceIndex]
 			if (inv) {
 				setInvoiceNumber(inv.number)
 				setCurrency(`${inv.currency} ($)`)
@@ -91,16 +97,16 @@ function InvoicePage() {
 			}
 			navigate('/', { replace: true })
 		}
-	}, [invoiceIndex, navigate])
+	}, [invoiceIndex, historyList, navigate])
 
-	// Génération & téléchargement PDF
+	// Génération et téléchargement du PDF
 	const handleDownload = () => {
 		const doc = new jsPDF('p', 'pt', 'a4')
 		const margin = 40
 		const pageW = doc.internal.pageSize.getWidth()
 		let y = margin
 
-		// 1) Logo avec max W/H
+		// 1) Logo avec taille max
 		if (logo) {
 			const img = new Image()
 			img.src = logo
@@ -111,11 +117,9 @@ function InvoicePage() {
 				let imgW, imgH
 
 				if (ratio >= 1) {
-					// paysage ou carrée
 					imgW = maxW
 					imgH = maxW / ratio
 				} else {
-					// portrait
 					imgH = maxH
 					imgW = maxH * ratio
 				}
@@ -148,7 +152,7 @@ function InvoicePage() {
 			doc.text(`PO # : ${dates.poNumber}`, rx, y + 45, { align: 'right' })
 			y += 80
 
-			// 4) Tableau items
+			// 4) Tableau des items
 			autoTable(doc, {
 				startY: y,
 				margin: { left: margin, right: margin },
@@ -208,16 +212,16 @@ function InvoicePage() {
 			)
 			y += 90
 
-			// 6) Notes & Terms
+			// 6) Notes & terms
 			doc.text('Notes:', margin, y)
 			doc.text(notesTerms.notes || '-', margin + 40, y)
 			doc.text('Terms:', margin, y + 15)
 			doc.text(notesTerms.terms || '-', margin + 40, y + 15)
 
-			// 7) Sauvegarde PDF
+			// 7) Sauvegarde du PDF
 			doc.save(`invoice_${invoiceNumber}.pdf`)
 
-			// 8) Enregistrement historique
+			// 8) Enregistrement dans l'historique
 			addInvoiceToHistory({
 				customer: clientData.billTo || clientData.issuer,
 				type: 'invoice',
@@ -239,13 +243,17 @@ function InvoicePage() {
 				terms: notesTerms.terms,
 				amountPaid,
 			})
+
+			// 9) Réinitialiser le numéro pour la prochaine facture
+			const newIndex = loadHistory().length + 1
+			setInvoiceNumber(`Fact-${String(newIndex).padStart(4, '0')}`)
 		}
 	}
 
 	return (
 		<div className='min-h-screen bg-gray-100 p-4'>
 			<div className='max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6'>
-				{/* Création facture */}
+				{/* Création de la facture */}
 				<div className='md:col-span-2 bg-white p-6 rounded shadow border border-gray-200'>
 					<div className='flex justify-between items-start mb-6'>
 						<LogoUpload logo={logo} onUpload={setLogo} />
@@ -256,8 +264,8 @@ function InvoicePage() {
 								<input
 									type='text'
 									value={invoiceNumber}
-									onChange={(e) => setInvoiceNumber(e.target.value)}
-									className='border border-gray-200 p-1 rounded w-20 text-right'
+									readOnly
+									className='border border-gray-200 p-1 rounded w-28 text-right bg-gray-100 cursor-not-allowed'
 								/>
 							</div>
 						</div>
@@ -319,7 +327,7 @@ function HistoryPage() {
 
 	const exportCSV = () => {
 		const rows = []
-		history.forEach((inv, idx) =>
+		history.forEach((inv) =>
 			inv.items.forEach((item) => {
 				rows.push({
 					customer: inv.customer,
