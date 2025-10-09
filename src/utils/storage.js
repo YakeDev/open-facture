@@ -8,10 +8,15 @@ export const saveHistory = (history) => {
 	localStorage.setItem('invoicesHistory', JSON.stringify(history))
 }
 
-export const addInvoiceToHistory = (invoice) => {
+export const addInvoiceToHistory = (invoice, index) => {
 	const history = loadHistory()
-	history.push(invoice)
+	if (typeof index === 'number' && index >= 0 && index < history.length) {
+		history[index] = invoice
+	} else {
+		history.push(invoice)
+	}
 	saveHistory(history)
+	return history
 }
 
 export const clearHistory = () => {

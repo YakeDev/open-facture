@@ -1,6 +1,6 @@
 import React from 'react'
 
-export default function ItemsTable({ items, setItems, currency = 'USD ($)' }) {
+export default function ItemsTable({ items, setItems, currency }) {
 	const onChange = (id, field) => (e) => {
 		const v = field === 'description' ? e.target.value : Number(e.target.value)
 		setItems(items.map((i) => (i.id === id ? { ...i, [field]: v } : i)))
@@ -12,8 +12,7 @@ export default function ItemsTable({ items, setItems, currency = 'USD ($)' }) {
 		])
 	const del = (id) => setItems(items.filter((i) => i.id !== id))
 
-	const match = currency.match(/\(([^)]+)\)/)
-	const symbol = match ? match[1] : ''
+	const symbol = currency?.symbol ?? ''
 
 	return (
 		<div className='mb-6'>

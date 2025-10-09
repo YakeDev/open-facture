@@ -10,7 +10,7 @@ export default function SummaryPanel({
 	balanceDue,
 	currency,
 }) {
-	const symbol = (currency.match(/\(([^)]+)\)/) || [])[1] || ''
+	const symbol = currency?.symbol ?? currency?.code ?? ''
 	return (
 		<div className='bg-white p-4 rounded shadow border border-gray-200'>
 			<div className='flex justify-between mb-2 border-b border-gray-200 pb-2'>
