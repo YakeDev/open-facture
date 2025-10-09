@@ -4,14 +4,15 @@ import {
 	BrowserRouter,
 	Routes,
 	Route,
-	Link,
+	NavLink,
+	Navigate,
 	useNavigate,
 	useLocation,
 } from 'react-router-dom'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-import { loadHistory, addInvoiceToHistory, clearHistory } from './utils/storage'
+import { loadHistory, saveHistory, clearHistory } from './utils/storage'
 
 import LogoUpload from './components/LogoUpload'
 import ClientInfo from './components/ClientInfo'
@@ -19,6 +20,12 @@ import DatesInfo from './components/DatesInfo'
 import ItemsTable from './components/ItemsTable'
 import NotesTerms from './components/NotesTerms'
 import SummaryPanel from './components/SummaryPanel'
+import useAuth from './hooks/useAuth'
+import { invoiceApi } from './services/api'
+import ProtectedRoute from './components/ProtectedRoute'
+import LoginPage from './pages/Login'
+import RegisterPage from './pages/Register'
+import DashboardPage from './pages/Dashboard'
 
 const currencyOptions = [
 	{ code: 'USD', label: 'USD ($)', symbol: '$', fallbackUsdRate: 1 },
@@ -48,21 +55,62 @@ const formatInvoiceNumber = (index) =>
 
 const toCurrencyNumber = (value) => Number(Number(value || 0).toFixed(2))
 
+const toLocalHistoryEntry = (invoice) => {
+	const currencyMeta = getCurrencyMeta(invoice.currency)
+	return {
+		id: invoice.id,
+		type: 'invoice',
+		number: invoice.number,
+		customer: invoice.customerName,
+		customerName: invoice.customerName,
+		date: invoice.issueDate ? invoice.issueDate.slice(0, 10) : '',
+		due_date: invoice.dueDate ? invoice.dueDate.slice(0, 10) : '',
+		currency: invoice.currency,
+		currencyCode: invoice.currency,
+		currencySymbol: currencyMeta.symbol,
+		currencyLabel: currencyMeta.label,
+		subtotal: invoice.subtotal,
+		tax: invoice.taxRate,
+		total: invoice.total,
+		amountPaid: invoice.amountPaid,
+		balanceDue: invoice.balanceDue,
+		paymentTerms: invoice.terms,
+		notes: invoice.notes,
+		terms: invoice.additionalTerms ?? invoice.terms,
+		currencyUsdRate: invoice.currencyUsdRate,
+		exchangeRatesUSD: invoice.exchangeRatesSnapshot,
+		exchangeRatesFetchedAt: invoice.exchangeRatesFetchedAt,
+		createdAt: invoice.createdAt,
+		updatedAt: invoice.updatedAt,
+		items: (invoice.items || []).map((item) => ({
+			description: item.description,
+			quantity: item.quantity,
+			unit_cost: item.unitCost,
+		})),
+	}
+}
+
 function InvoicePage() {
 	const navigate = useNavigate()
 	const { state } = useLocation()
 	const invoiceIndex = state?.invoiceIndex
+	const { user } = useAuth()
 
 	const [invoiceNumber, setInvoiceNumber] = useState(() => {
 		const history = loadHistory()
 		return formatInvoiceNumber(history.length + 1)
 	})
 	const [logo, setLogo] = useState(null)
-	const [currencyCode, setCurrencyCode] = useState(() => {
+	const [defaultCurrencyCode, setDefaultCurrencyCode] = useState(() => {
 		const stored = localStorage.getItem('defaultCurrencyCode')
 		return stored && currencyMap[stored] ? stored : DEFAULT_CURRENCY_CODE
 	})
+	const [currencyCode, setCurrencyCode] = useState(defaultCurrencyCode)
+	const [defaultCurrencySavedAt, setDefaultCurrencySavedAt] = useState(
+		() => localStorage.getItem('defaultCurrencySavedAt') || null
+	)
 	const currency = getCurrencyMeta(currencyCode)
+	const defaultCurrencyMeta = getCurrencyMeta(defaultCurrencyCode)
 	const previousCurrencyCodeRef = useRef(currencyCode)
 	const pendingCurrencyHydrationRef = useRef(null)
 	const [usdRates, setUsdRates] = useState(fallbackUsdRates)
@@ -87,6 +135,19 @@ function InvoicePage() {
 	const [amountPaid, setAmountPaid] = useState(0)
 	const [editingIndex, setEditingIndex] = useState(null)
 
+	const syncHistoryFromServer = useCallback(async () => {
+		if (!user) return null
+		try {
+			const data = await invoiceApi.list()
+			const remote = (data?.invoices || []).map(toLocalHistoryEntry)
+			saveHistory(remote)
+			return remote
+		} catch (error) {
+			console.error('sync history failed', error)
+			return null
+		}
+	}, [user])
+
 	const convertMoney = useCallback(
 		(value, fromCode, toCode) => {
 			const numeric = Number(value || 0)
@@ -110,8 +171,16 @@ function InvoicePage() {
 			const converted = usdValue / toRate
 			return toCurrencyNumber(converted)
 			},
-			[usdRates]
-		)
+		[usdRates]
+	)
+
+	const handleSaveDefaultCurrency = useCallback(() => {
+		localStorage.setItem('defaultCurrencyCode', currencyCode)
+		setDefaultCurrencyCode(currencyCode)
+		const timestamp = new Date().toISOString()
+		setDefaultCurrencySavedAt(timestamp)
+		localStorage.setItem('defaultCurrencySavedAt', timestamp)
+	}, [currencyCode])
 
 	const handleEditCustomRates = useCallback(() => {
 		const nextRates = { ...usdRates, USD: 1 }
@@ -192,6 +261,21 @@ function InvoicePage() {
 			setRatesUpdatedAt(storedUpdatedAt)
 		}
 	}, [])
+
+	useEffect(() => {
+		if (!user) return
+		let cancelled = false
+		;(async () => {
+			const remote = await syncHistoryFromServer()
+			if (cancelled || !remote) return
+			if (editingIndex == null) {
+				setInvoiceNumber(formatInvoiceNumber(remote.length + 1))
+			}
+		})()
+		return () => {
+			cancelled = true
+		}
+	}, [user, syncHistoryFromServer, editingIndex])
 
 	// Si on vient de l'historique, on pré-remplit le formulaire
 	useEffect(() => {
@@ -323,98 +407,160 @@ function InvoicePage() {
 		const pageW = doc.internal.pageSize.getWidth()
 		let y = margin
 
-			const finalizeInvoice = () => {
-				const history = loadHistory()
-				const existing = editingIndex != null ? history[editingIndex] : null
-				const timestamp = new Date().toISOString()
-				const createdAt = existing?.createdAt ?? timestamp
-				const subtotalValue = toCurrencyNumber(subtotal)
-				const taxValue = toCurrencyNumber(tax)
-				const totalValue = toCurrencyNumber(total)
-				const amountPaidValue = toCurrencyNumber(amountPaid)
-				const balanceDueValue = toCurrencyNumber(balanceDue)
-				const currencyUsdRate =
-					usdRates[currency.code] ??
-					fallbackUsdRates[currency.code] ??
-					1
-				const exchangeRatesSnapshot = currencyOptions.reduce(
-					(acc, option) => {
-						acc[option.code] =
-							usdRates[option.code] ??
-							fallbackUsdRates[option.code] ??
-							null
-						return acc
-					},
-					{}
-				)
+	const finalizeInvoice = async () => {
+		const history = loadHistory()
+		const existing = editingIndex != null ? history[editingIndex] : null
+		const timestamp = new Date().toISOString()
+		const createdAt = existing?.createdAt ?? timestamp
+		const subtotalValue = toCurrencyNumber(subtotal)
+		const taxValue = toCurrencyNumber(tax)
+		const totalValue = toCurrencyNumber(total)
+		const amountPaidValue = toCurrencyNumber(amountPaid)
+		const balanceDueValue = toCurrencyNumber(balanceDue)
+		const currencyUsdRate =
+			usdRates[currency.code] ??
+			fallbackUsdRates[currency.code] ??
+			1
+		const exchangeRatesSnapshot = currencyOptions.reduce(
+			(acc, option) => {
+				acc[option.code] =
+					usdRates[option.code] ??
+					fallbackUsdRates[option.code] ??
+					null
+				return acc
+			},
+			{}
+		)
 
-				const invoiceRecord = {
-					type: 'invoice',
-					number: invoiceNumber,
-					customer: clientData.billTo || clientData.issuer,
-					currency: currency.code,
-					currencyCode: currency.code,
-					currencySymbol: currency.symbol,
-					currencyLabel: currency.label,
-					currencyUsdRate,
-					exchangeRatesUSD: exchangeRatesSnapshot,
-					exchangeRatesFetchedAt: ratesUpdatedAt,
-					date: dates.date,
-					due_date: dates.dueDate,
-					paymentTerms: dates.terms,
-					poNumber: dates.poNumber,
-					dates: {
-						date: dates.date,
-						paymentTerms: dates.terms,
-						dueDate: dates.dueDate,
-						poNumber: dates.poNumber,
-					},
-					subtotal: subtotalValue,
-					tax: taxRate,
-					taxRate,
-					taxAmount: taxValue,
-					total: totalValue,
-					amountPaid: amountPaidValue,
-					balanceDue: balanceDueValue,
-					shipping: existing?.shipping ?? 0,
-					discount: existing?.discount ?? 0,
-					client: {
-						issuer: clientData.issuer,
-						billTo: clientData.billTo,
-						shipTo: clientData.shipTo,
-					},
-					issuer: clientData.issuer,
-					billTo: clientData.billTo,
-					shipTo: clientData.shipTo,
-					notes: notesTerms.notes,
-					additionalTerms: notesTerms.terms,
-					terms: notesTerms.terms,
-					items: items.map((i, idx) => ({
-						id: i.id ?? Date.now() + idx,
-						description: i.description,
-						quantity: Number(i.quantity ?? 0),
-						unit_cost: toCurrencyNumber(Number(i.rate ?? 0)),
-						amount: toCurrencyNumber(
-							Number(i.quantity ?? 0) * Number(i.rate ?? 0)
-						),
-					})),
-					createdAt,
-					updatedAt: timestamp,
-				}
+		const issueDateISO = dates.date
+			? new Date(dates.date).toISOString()
+			: new Date().toISOString()
+		const dueDateISO = dates.dueDate
+			? new Date(dates.dueDate).toISOString()
+			: undefined
+		const customerName = clientData.billTo || clientData.issuer || 'Client'
 
-			const updatedHistory = addInvoiceToHistory(
-				invoiceRecord,
-				editingIndex ?? undefined
-			)
+		const itemsForApi = items.map((i, idx) => ({
+			description: i.description || `Item ${idx + 1}`,
+			quantity: Number(i.quantity ?? 0),
+			unitCost: Number(i.rate ?? 0),
+			amount: Number(i.quantity ?? 0) * Number(i.rate ?? 0),
+		}))
 
+		const invoicePayload = {
+			number: invoiceNumber,
+			title: undefined,
+			issueDate: issueDateISO,
+			dueDate: dueDateISO,
+			terms: dates.terms?.trim() || undefined,
+			customerName,
+			customerEmail: clientData.email?.trim() || undefined,
+			customerAddress: clientData.address?.trim() || undefined,
+			shipTo: clientData.shipTo?.trim() || undefined,
+			currency: currency.code,
+			subtotal: subtotalValue,
+			taxRate,
+			taxAmount: taxValue,
+			total: totalValue,
+			amountPaid: amountPaidValue,
+			balanceDue: balanceDueValue,
+			notes: notesTerms.notes?.trim() || undefined,
+			additionalTerms: notesTerms.terms?.trim() || undefined,
+			currencyUsdRate,
+			exchangeRatesSnapshot,
+			items: itemsForApi,
+		}
+
+		const itemsForLocal = items.map((i, idx) => ({
+			id: String(i.id ?? `${Date.now()}-${idx}`),
+			description: i.description || `Item ${idx + 1}`,
+			quantity: Number(i.quantity ?? 0),
+			unit_cost: Number(i.rate ?? 0),
+		}))
+
+		let remoteHistory = null
+		try {
+			if (existing?.id) {
+				await invoiceApi.update(existing.id, invoicePayload)
+			} else {
+				await invoiceApi.create(invoicePayload)
+			}
+			remoteHistory = await syncHistoryFromServer()
+		} catch (error) {
+			console.error('remote invoice sync failed', error)
+			let message = error?.message ||
+				'Impossible de sauvegarder la facture sur le serveur. Elle reste stockée en local.'
+			if (Array.isArray(error?.payload?.error)) {
+				message = error.payload.error
+					.map((issue) => {
+						const path = Array.isArray(issue.path)
+							? issue.path.join('.')
+							: ''
+						return path ? `${path}: ${issue.message}` : issue.message
+					})
+					.join('\n')
+			}
+			window.alert(message)
+		}
+
+		if (remoteHistory) {
 			if (editingIndex != null) {
 				setEditingIndex(null)
-				setInvoiceNumber(invoiceRecord.number)
+				setInvoiceNumber(invoicePayload.number)
 			} else {
-				const nextNumber = formatInvoiceNumber(updatedHistory.length + 1)
-				setInvoiceNumber(nextNumber)
+				setInvoiceNumber(formatInvoiceNumber(remoteHistory.length + 1))
 			}
+			return
 		}
+
+		if (existing) {
+			history[editingIndex] = {
+				...existing,
+				...invoicePayload,
+				date: invoicePayload.issueDate
+					? invoicePayload.issueDate.slice(0, 10)
+					: '',
+				due_date: invoicePayload.dueDate
+					? invoicePayload.dueDate.slice(0, 10)
+					: '',
+				items: itemsForLocal,
+				total: totalValue,
+			}
+		} else {
+			history.push({
+				...invoicePayload,
+				type: 'invoice',
+				customer: invoicePayload.customerName,
+				currencyCode: invoicePayload.currency,
+				currency: invoicePayload.currency,
+				currencySymbol: currency.symbol,
+				currencyLabel: currency.label,
+				date: invoicePayload.issueDate
+					? invoicePayload.issueDate.slice(0, 10)
+					: '',
+				due_date: invoicePayload.dueDate
+					? invoicePayload.dueDate.slice(0, 10)
+					: '',
+				total: totalValue,
+				tax: taxRate,
+				amountPaid: amountPaidValue,
+				balanceDue: balanceDueValue,
+				items: itemsForLocal,
+				createdAt,
+				updatedAt: timestamp,
+			})
+		}
+
+		saveHistory(history)
+
+		if (editingIndex != null) {
+			setEditingIndex(null)
+			setInvoiceNumber(invoicePayload.number)
+		} else {
+			const nextNumber = formatInvoiceNumber(history.length + 1)
+			setInvoiceNumber(nextNumber)
+		}
+	}
 
 		// 1) Logo avec taille max
 		if (logo) {
@@ -436,18 +582,26 @@ function InvoicePage() {
 
 				doc.addImage(img, 'PNG', margin, y, imgW, imgH)
 				y += imgH + 20
-				renderPDF()
+				renderPDF().catch((error) => {
+					console.error('pdf generation failed', error)
+				})
 			}
-			img.onerror = renderPDF
+			img.onerror = () => {
+				renderPDF().catch((error) => {
+					console.error('pdf generation failed', error)
+				})
+			}
 		} else {
 			y += 20
-			renderPDF()
+			renderPDF().catch((error) => {
+				console.error('pdf generation failed', error)
+			})
 		}
 
-		function renderPDF() {
-			// 2) Titre & numéro
-			doc.setFontSize(24)
-			doc.text('INVOICE', pageW - margin, y + 10, { align: 'right' })
+	async function renderPDF() {
+		// 2) Titre & numéro
+		doc.setFontSize(24)
+		doc.text('INVOICE', pageW - margin, y + 10, { align: 'right' })
 			doc.setFontSize(12)
 			doc.text(`# ${invoiceNumber}`, pageW - margin, y + 30, { align: 'right' })
 			y += 60
@@ -524,9 +678,9 @@ function InvoicePage() {
 			// 7) Sauvegarde du PDF
 			doc.save(`invoice_${invoiceNumber}.pdf`)
 
-			// 8) Enregistrement dans l'historique
-			finalizeInvoice()
-		}
+		// 8) Enregistrement dans l'historique
+		await finalizeInvoice()
+	}
 	}
 
 	return (
@@ -590,9 +744,7 @@ function InvoicePage() {
 						</select>
 						<button
 							type='button'
-							onClick={() =>
-								localStorage.setItem('defaultCurrencyCode', currencyCode)
-							}
+							onClick={handleSaveDefaultCurrency}
 							className='mt-2 text-green-600 text-sm hover:underline'>
 							Enregistrer par défaut
 						</button>
@@ -603,6 +755,14 @@ function InvoicePage() {
 							Ajuster les taux
 						</button>
 						<div className='mt-3 text-xs text-gray-500 space-y-1'>
+							<p>
+								Devise par défaut&nbsp;: {defaultCurrencyMeta.label}
+								{defaultCurrencySavedAt
+									? ` (enregistrée le ${new Date(
+											defaultCurrencySavedAt
+									  ).toLocaleString()})`
+									: ''}
+							</p>
 							<p>
 								{ratesUpdatedAt
 									? `Taux personnalisés du ${new Date(
@@ -622,10 +782,31 @@ function InvoicePage() {
 
 function HistoryPage() {
 	const [history, setHistory] = useState([])
+	const [loading, setLoading] = useState(true)
 	const navigate = useNavigate()
 
 	useEffect(() => {
-		setHistory(loadHistory())
+		let mounted = true
+		;(async () => {
+			try {
+				const data = await invoiceApi.list()
+				const remote = (data?.invoices || []).map(toLocalHistoryEntry)
+				if (!mounted) return
+				setHistory(remote)
+				saveHistory(remote)
+			} catch (error) {
+				console.error('history sync failed', error)
+				if (!mounted) return
+				setHistory(loadHistory())
+			} finally {
+				if (mounted) {
+					setLoading(false)
+				}
+			}
+		})()
+		return () => {
+			mounted = false
+		}
 	}, [])
 
 	const formatTotal = (inv) => {
@@ -751,6 +932,16 @@ function HistoryPage() {
 		}
 	}
 
+	if (loading) {
+		return (
+			<div className='min-h-screen bg-gray-100 p-4'>
+				<div className='max-w-4xl mx-auto bg-white p-6 rounded shadow text-center text-gray-500'>
+					Chargement de l'historique…
+				</div>
+			</div>
+		)
+	}
+
 	return (
 		<div className='min-h-screen bg-gray-100 p-4'>
 			<div className='max-w-4xl mx-auto bg-white p-6 rounded shadow'>
@@ -811,19 +1002,98 @@ function HistoryPage() {
 }
 
 export default function App() {
+	const { user, logout, loading } = useAuth()
+
+	const handleLogout = async () => {
+		try {
+			await logout()
+		} catch (error) {
+			console.error('logout error', error)
+		}
+	}
+
 	return (
 		<BrowserRouter>
-			<nav className='bg-white border-b p-4 mb-4'>
-				<Link to='/' className='mr-4 font-medium'>
-					Créer facture
-				</Link>
-				<Link to='/history' className='font-medium'>
-					Historique
-				</Link>
-			</nav>
+			{user ? (
+				<header className='bg-white border-b border-gray-200 mb-4'>
+					<div className='max-w-6xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between p-4 gap-3'>
+						<div className='flex items-center gap-3'>
+							<span className='text-xl font-semibold text-green-600'>
+								Open Facture
+							</span>
+							<nav className='flex items-center gap-3 text-sm font-medium'>
+								<NavLink
+									to='/'
+									className={({ isActive }) =>
+										isActive ? 'text-green-600' : 'text-gray-600 hover:text-green-600'
+									}>
+									Créer
+								</NavLink>
+								<NavLink
+									to='/dashboard'
+									className={({ isActive }) =>
+										isActive ? 'text-green-600' : 'text-gray-600 hover:text-green-600'
+									}>
+									Dashboard
+								</NavLink>
+								<NavLink
+									to='/history'
+									className={({ isActive }) =>
+										isActive ? 'text-green-600' : 'text-gray-600 hover:text-green-600'
+									}>
+									Historique local
+								</NavLink>
+							</nav>
+						</div>
+						<div className='flex items-center gap-3 text-sm text-gray-600'>
+							{user?.email ? <span>{user.email}</span> : null}
+							<button
+								type='button'
+								onClick={handleLogout}
+								className='text-red-600 hover:underline'>
+								Se déconnecter
+							</button>
+						</div>
+					</div>
+				</header>
+			) : null}
 			<Routes>
-				<Route path='/' element={<InvoicePage />} />
-				<Route path='/history' element={<HistoryPage />} />
+				<Route
+					path='/login'
+					element={
+						user && !loading ? <Navigate to='/' replace /> : <LoginPage />
+					}
+				/>
+				<Route
+					path='/register'
+					element={
+						user && !loading ? <Navigate to='/' replace /> : <RegisterPage />
+					}
+				/>
+				<Route
+					path='/'
+					element={
+						<ProtectedRoute>
+							<InvoicePage />
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path='/dashboard'
+					element={
+						<ProtectedRoute>
+							<DashboardPage />
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path='/history'
+					element={
+						<ProtectedRoute>
+							<HistoryPage />
+						</ProtectedRoute>
+					}
+				/>
 			</Routes>
 		</BrowserRouter>
 	)

@@ -1,0 +1,35 @@
+import { z } from 'zod'
+
+const currencyEnum = z.enum(['USD', 'EUR', 'CDF', 'GBP', 'CAD'])
+
+const invoiceItemSchema = z.object({
+	id: z.string().uuid().optional(),
+	description: z.string().min(1),
+	quantity: z.number().nonnegative(),
+	unitCost: z.number().nonnegative(),
+	amount: z.number().nonnegative().optional(),
+})
+
+export const invoicePayloadSchema = z.object({
+	number: z.string().min(1),
+	title: z.string().optional(),
+	issueDate: z.coerce.date(),
+	dueDate: z.coerce.date().optional(),
+	terms: z.string().optional(),
+	customerName: z.string().min(1),
+	customerEmail: z.string().email().optional().or(z.literal('')),
+	customerAddress: z.string().optional(),
+	shipTo: z.string().optional(),
+	currency: currencyEnum,
+	subtotal: z.number().nonnegative(),
+	taxRate: z.number().min(0).optional(),
+	taxAmount: z.number().min(0).optional(),
+	total: z.number().nonnegative(),
+	amountPaid: z.number().min(0),
+	balanceDue: z.number().nonnegative(),
+	notes: z.string().optional(),
+	additionalTerms: z.string().optional(),
+	currencyUsdRate: z.number().min(0).optional(),
+	exchangeRatesSnapshot: z.record(z.any()).optional(),
+	items: z.array(invoiceItemSchema).min(1),
+})
