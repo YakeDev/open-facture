@@ -24,9 +24,9 @@
 - [x] **Nettoyer les dépendances front inutilisées** – `html2canvas` et `html2pdf.js` ne sont plus invoqués. `package.json:11` Les retirer allège le bundle (~200 KB) et les audits de sécurité.
 
 ## Tests & QA
-- [ ] **Back-end** – Ajouter des tests d’intégration (Vitest/Supertest) pour auth et factures (scénarios création/duplication/mise à jour avec transactions). Couvrir explicitement l’agrégation du dashboard et les contrôles d’accès.
+- [x] **Back-end** – Ajouter des tests d’intégration (Vitest/Supertest) pour auth et factures (scénarios création/duplication/mise à jour avec transactions). Couvrir explicitement l’agrégation du dashboard et les contrôles d’accès.
 - [x] **Front-end** – Mettre en place Vitest + Testing Library pour sécuriser le builder (conversion devises, validation de formulaire, affichage des erreurs réseau). Un test de régression garantit que `handleDownload` déclenche bien la sauvegarde locale.
-- [ ] **E2E** – Introduire Playwright/Cypress pour couvrir le parcours complet (inscription → création facture → téléchargement PDF). Utiliser une base de test isolée et des seeds déterministes.
+- [x] **E2E** – Introduire Playwright/Cypress pour couvrir le parcours complet (inscription → création facture → téléchargement PDF). Utiliser une base de test isolée et des seeds déterministes.
 
 ## Documentation & DX
 - [x] **Fournir des gabarits d’environnement** – Ajouter `.env.example` côté front (`VITE_API_BASE_URL`) et enrichir celui du backend avec les options sécurité (CORS, cookie). `server/README.md:14`

@@ -72,5 +72,16 @@ Toutes les routes `/api/**` nécessitent une authentification (cookie ou header 
 - Les fichiers uploadés sont stockés dans `server/uploads` et servis statiquement via `/uploads`.
 
 ## Tests
+- Tests d'intégration API (Vitest + Supertest) :
 
-Des tests front (Vitest) sont disponibles dans la racine du projet (`npm run test`). L’ajout de tests d’intégration backend est facilité par la factorisation des mappers (`server/src/lib`).
+```bash
+npm run test --prefix server
+```
+
+- Tests End-to-End (Playwright) exécutés depuis la racine :
+
+```bash
+npm run test:e2e
+```
+
+Avant de lancer les tests E2E, assurez-vous que l’API et la base PostgreSQL sont opérationnelles.

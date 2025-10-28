@@ -56,6 +56,8 @@ npm run dev
 | `npm run build` | construit le front |
 | `npm run lint` | lint front + back (ESLint flat config) |
 | `npm run test` | exécute les tests Vitest côté front |
+| `npm run test --prefix server` | lance les tests d'intégration API |
+| `npm run test:e2e` | exécute les tests Playwright (front + API requis) |
 | `npm run dev --prefix server` | démarre l’API (nodemon) |
 | `npm run prisma:migrate --prefix server` | migration Prisma |
 
@@ -83,7 +85,9 @@ COOKIE_SAME_SITE=lax
 ## Tests & CI
 
 - Vitest + Testing Library couvrent les utilitaires et composants critiques (`npm run test`).
-- Une pipeline GitHub Actions (`.github/workflows/ci.yml`) installe les deux projets, exécute ESLint et les tests front.
+- Des tests d'intégration API (Vitest + Supertest) vérifient l'authentification et la synthèse des factures (`npm run test --prefix server`).
+- Les tests End-to-End Playwright reproduisent le parcours d'inscription/connexion (`npm run test:e2e`) — nécessite l'API, la base et les navigateurs Playwright.
+- Une pipeline GitHub Actions (`.github/workflows/ci.yml`) installe les deux projets, exécute ESLint et les tests unitaires front.
 
 ## Points notables
 
