@@ -3,41 +3,106 @@ import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import { invoicePayloadSchema } from '../schemas/invoice.js'
+import {
+	buildInvoiceData,
+	mapInvoice,
+	mapInvoices,
+	prismaDuplicateGuard,
+} from '../lib/invoice.js'
+import { forbidden, notFound } from '../utils/httpError.js'
 
 const router = Router()
 
-const toDecimal = (value) => new Prisma.Decimal(value ?? 0)
+const parsePagination = (query) => {
+	const rawPage = Number.parseInt(query.page, 10)
+	const rawLimit = Number.parseInt(query.limit, 10)
 
-const mapInvoice = (invoice) => ({
-	...invoice,
-	subtotal: Number(invoice.subtotal),
-	taxRate: invoice.taxRate ? Number(invoice.taxRate) : null,
-	taxAmount: invoice.taxAmount ? Number(invoice.taxAmount) : null,
-	total: Number(invoice.total),
-	amountPaid: Number(invoice.amountPaid),
-	balanceDue: Number(invoice.balanceDue),
-	items: invoice.items.map((item) => ({
-		...item,
-		quantity: Number(item.quantity),
-		unitCost: Number(item.unitCost),
-		amount: Number(item.amount),
-	})),
-	currencyUsdRate: invoice.currencyUsdRate
-		? Number(invoice.currencyUsdRate)
-		: null,
-})
+	const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1
+	const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 20
+
+	return {
+		page,
+		limit: Math.min(limit, 100),
+		skip: (page - 1) * Math.min(limit, 100),
+	}
+}
+
+const isAdmin = (user) => user.role === 'admin'
 
 router.use(requireAuth)
 
+router.get('/summary', async (req, res, next) => {
+	try {
+		const where = isAdmin(req.user) ? {} : { userId: req.user.id }
+		const [aggregate, recent] = await Promise.all([
+			prisma.invoice.aggregate({
+				where,
+				_count: { _all: true },
+				_sum: {
+					total: true,
+					amountPaid: true,
+					balanceDue: true,
+				},
+			}),
+			prisma.invoice.findMany({
+				where,
+				orderBy: { issueDate: 'desc' },
+				take: 5,
+				select: {
+					id: true,
+					number: true,
+					customerName: true,
+					issueDate: true,
+					total: true,
+					balanceDue: true,
+					currency: true,
+				},
+			}),
+		])
+
+		const summary = {
+			totalInvoices: aggregate._count?._all || 0,
+			totalAmount: Number(aggregate._sum?.total || 0),
+			totalPaid: Number(aggregate._sum?.amountPaid || 0),
+			totalOutstanding: Number(aggregate._sum?.balanceDue || 0),
+			recent: recent.map((invoice) => ({
+				...invoice,
+				total: Number(invoice.total || 0),
+				balanceDue: Number(invoice.balanceDue || 0),
+			})),
+		}
+
+		return res.json({ summary })
+	} catch (error) {
+		return next(error)
+	}
+})
+
 router.get('/', async (req, res, next) => {
 	try {
-		const where = req.user.role === 'admin' ? {} : { userId: req.user.id }
-		const invoices = await prisma.invoice.findMany({
-			where,
-			orderBy: { issueDate: 'desc' },
-			include: { items: true },
+		const { page, limit, skip } = parsePagination(req.query)
+		const where = isAdmin(req.user) ? {} : { userId: req.user.id }
+
+		const [invoices, totalCount] = await Promise.all([
+			prisma.invoice.findMany({
+				where,
+				orderBy: { issueDate: 'desc' },
+				include: { items: true },
+				skip,
+				take: limit,
+			}),
+			prisma.invoice.count({ where }),
+		])
+
+		return res.json({
+			invoices: mapInvoices(invoices),
+			pagination: {
+				page,
+				limit,
+				totalCount,
+				totalPages: Math.ceil(totalCount / limit) || 1,
+			},
 		})
-		return res.json({ invoices: invoices.map(mapInvoice) })
 	} catch (error) {
 		return next(error)
 	}
@@ -46,57 +111,21 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
 	try {
 		const payload = invoicePayloadSchema.parse(req.body)
+		const { data } = buildInvoiceData(payload, req.user.id)
 
 		const invoice = await prisma.invoice.create({
-			data: {
-				userId: req.user.id,
-				number: payload.number,
-				title: payload.title,
-				issueDate: payload.issueDate,
-				dueDate: payload.dueDate,
-				terms: payload.terms,
-				customerName: payload.customerName,
-				customerEmail: payload.customerEmail || null,
-				customerAddress: payload.customerAddress,
-				shipTo: payload.shipTo,
-				currency: payload.currency,
-				subtotal: toDecimal(payload.subtotal),
-				taxRate:
-					typeof payload.taxRate === 'number'
-						? toDecimal(payload.taxRate)
-						: null,
-				taxAmount:
-					typeof payload.taxAmount === 'number'
-						? toDecimal(payload.taxAmount)
-						: null,
-				total: toDecimal(payload.total),
-				amountPaid: toDecimal(payload.amountPaid),
-				balanceDue: toDecimal(payload.balanceDue),
-				notes: payload.notes,
-				additionalTerms: payload.additionalTerms,
-				currencyUsdRate:
-					typeof payload.currencyUsdRate === 'number'
-						? toDecimal(payload.currencyUsdRate)
-						: null,
-				exchangeRatesSnapshot: payload.exchangeRatesSnapshot ?? null,
-				items: {
-					create: payload.items.map((item) => ({
-						description: item.description,
-						quantity: toDecimal(item.quantity),
-						unitCost: toDecimal(item.unitCost),
-						amount: toDecimal(
-							item.amount ?? item.quantity * item.unitCost
-						),
-					})),
-				},
-			},
+			data,
 			include: { items: true },
 		})
 
 		return res.status(201).json({ invoice: mapInvoice(invoice) })
 	} catch (error) {
-		if (error.name === 'ZodError') {
-			return res.status(400).json({ error: error.issues })
+		if (error instanceof Prisma.PrismaClientKnownRequestError) {
+			try {
+				prismaDuplicateGuard(error, 'number')
+			} catch (guardError) {
+				return next(guardError)
+			}
 		}
 		return next(error)
 	}
@@ -110,11 +139,11 @@ router.get('/:id', async (req, res, next) => {
 		})
 
 		if (!invoice) {
-			return res.status(404).json({ error: 'Facture introuvable.' })
+			throw notFound('Facture introuvable.')
 		}
 
-		if (req.user.role !== 'admin' && invoice.userId !== req.user.id) {
-			return res.status(403).json({ error: 'Accès refusé.' })
+		if (!isAdmin(req.user) && invoice.userId !== req.user.id) {
+			throw forbidden('Accès refusé.')
 		}
 
 		return res.json({ invoice: mapInvoice(invoice) })
@@ -126,67 +155,32 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
 	try {
 		const payload = invoicePayloadSchema.parse(req.body)
+		const existing = await prisma.invoice.findUnique({
+			where: { id: req.params.id },
+		})
 
-	const invoice = await prisma.invoice.findUnique({
-		where: { id: req.params.id },
-		include: { items: true },
-	})
+		if (!existing) {
+			throw notFound('Facture introuvable.')
+		}
 
-	if (!invoice) {
-		return res.status(404).json({ error: 'Facture introuvable.' })
-	}
+		if (!isAdmin(req.user) && existing.userId !== req.user.id) {
+			throw forbidden('Accès refusé.')
+		}
 
-	if (req.user.role !== 'admin' && invoice.userId !== req.user.id) {
-		return res.status(403).json({ error: 'Accès refusé.' })
-	}
+	const { data } = buildInvoiceData(payload, existing.userId)
+	const { items, ...updateData } = data
+	delete updateData.userId
 
 		const updated = await prisma.$transaction(async (tx) => {
 			await tx.invoiceItem.deleteMany({
-				where: { invoiceId: invoice.id },
+				where: { invoiceId: existing.id },
 			})
 
 			return tx.invoice.update({
-				where: { id: invoice.id },
+				where: { id: existing.id },
 				data: {
-					number: payload.number,
-					title: payload.title,
-					issueDate: payload.issueDate,
-					dueDate: payload.dueDate,
-					terms: payload.terms,
-					customerName: payload.customerName,
-					customerEmail: payload.customerEmail || null,
-					customerAddress: payload.customerAddress,
-					shipTo: payload.shipTo,
-					currency: payload.currency,
-					subtotal: toDecimal(payload.subtotal),
-					taxRate:
-						typeof payload.taxRate === 'number'
-							? toDecimal(payload.taxRate)
-							: null,
-					taxAmount:
-						typeof payload.taxAmount === 'number'
-							? toDecimal(payload.taxAmount)
-							: null,
-					total: toDecimal(payload.total),
-					amountPaid: toDecimal(payload.amountPaid),
-					balanceDue: toDecimal(payload.balanceDue),
-					notes: payload.notes,
-					additionalTerms: payload.additionalTerms,
-					currencyUsdRate:
-						typeof payload.currencyUsdRate === 'number'
-							? toDecimal(payload.currencyUsdRate)
-							: null,
-					exchangeRatesSnapshot: payload.exchangeRatesSnapshot ?? null,
-					items: {
-						create: payload.items.map((item) => ({
-							description: item.description,
-							quantity: toDecimal(item.quantity),
-							unitCost: toDecimal(item.unitCost),
-							amount: toDecimal(
-								item.amount ?? item.quantity * item.unitCost
-							),
-						})),
-					},
+					...updateData,
+					items,
 				},
 				include: { items: true },
 			})
@@ -194,8 +188,12 @@ router.put('/:id', async (req, res, next) => {
 
 		return res.json({ invoice: mapInvoice(updated) })
 	} catch (error) {
-		if (error.name === 'ZodError') {
-			return res.status(400).json({ error: error.issues })
+		if (error instanceof Prisma.PrismaClientKnownRequestError) {
+			try {
+				prismaDuplicateGuard(error, 'number')
+			} catch (guardError) {
+				return next(guardError)
+			}
 		}
 		return next(error)
 	}
@@ -208,11 +206,11 @@ router.delete('/:id', async (req, res, next) => {
 		})
 
 		if (!invoice) {
-			return res.status(404).json({ error: 'Facture introuvable.' })
+			throw notFound('Facture introuvable.')
 		}
 
-		if (req.user.role !== 'admin' && invoice.userId !== req.user.id) {
-			return res.status(403).json({ error: 'Accès refusé.' })
+		if (!isAdmin(req.user) && invoice.userId !== req.user.id) {
+			throw forbidden('Accès refusé.')
 		}
 
 		await prisma.invoice.delete({

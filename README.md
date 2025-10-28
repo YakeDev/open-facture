@@ -1,39 +1,95 @@
-# Application Web de Facturation
+# Open Facture
 
-Cette application web permet de générer, personnaliser et télécharger des factures professionnelles directement depuis un navigateur. Conçue pour les freelances et les petites structures, elle offre une interface intuitive et un export PDF sans dépendre de solutions tierces payantes.
+Application web de facturation avec génération PDF, synchronisation serveur et authentification par cookie. Le projet est découpé en deux parties :
+
+- **Front-end** : React + Vite + Tailwind (dossier racine)
+- **Back-end** : Express + Prisma + PostgreSQL (dossier `server`)
 
 ## Fonctionnalités principales
 
-- **Ajout de logo** : Importez et modifiez le logo de votre entreprise.
-- **Gestion des clients** : Saisie rapide des informations émetteur et destinataire.
-- **Dates & Conditions** : Sélection de la date, modalités de paiement, échéance et numéro de commande.
-- **Tableau des prestations** : Ajout, édition, suppression d’éléments avec quantités, tarifs et calcul automatique des montants.
-- **Notes & Conditions** : Section libre pour ajouter des informations complémentaires.
-- **Résumé financier** : Calcul automatique du sous-total, taxes, total, montant payé et solde dû.
-- **Sélecteur de devise** : Choix parmi plusieurs devises (USD, EUR, CDF, etc.).
-- **Export PDF** : Génération d’un PDF conforme à la maquette, avec téléchargement instantané.
-- **Persistance locale** : Sauvegarde automatique des factures dans le `localStorage`.
+- Création et édition de factures multi-devises avec conversion automatique
+- Synchronisation sécurisée avec l’API (authentification par cookie JWT)
+- Tableau de bord (totaux facturés, encaissés, solde dû, dernières factures)
+- Gestion d’un historique local exportable en CSV
+- Téléversement du logo sur le serveur (stockage persistant via `User.logoUrl`)
+- Génération PDF fidèle avec jsPDF / autotable
+- Ajustement manuel des taux de change avec validation et horodatage
 
-## Technologies utilisées
+## Prérequis
 
-- **React 18** (via Vite)
-- **Tailwind CSS**
-- **jsPDF** et **jspdf-autotable** pour la génération de PDF
-- **LocalStorage** pour la persistance
+- Node.js 20+
+- PostgreSQL 14+
 
-## Installation
+## Installation rapide
 
-1. Cloner le dépôt :
-   ```bash
-   git clone https://github.com/votre-utilisateur/facturation-app.git
-   cd facturation-app
-   ```
-2. Installer les dépendances :
-   ```bash
-    npm install
-   ```
-3. Lancer le serveur de développement :
-   ```bash
-    npm run dev
-   ```
-4. Ouvrir votre navigateur à http://localhost:5173
+```bash
+# 1. Installer les dépendances front
+npm install
+
+# 2. Installer les dépendances back
+npm install --prefix server
+
+# 3. Préparer les variables d’environnement
+cp .env.example .env
+cp server/.env.example server/.env
+# éditer server/.env (DATABASE_URL, JWT_SECRET, …)
+
+# 4. Générer le client Prisma et appliquer les migrations
+npm run prisma:generate --prefix server
+npm run prisma:migrate --prefix server
+# Optionnel : seed utilisateur admin
+npm run prisma:seed --prefix server
+
+# 5. Lancer les deux serveurs (deux terminaux)
+npm run dev --prefix server
+npm run dev
+```
+
+- Front-end disponible sur http://localhost:5173
+- API disponible sur http://localhost:4000/api
+
+## Scripts utiles
+
+| Commande | Description |
+| --- | --- |
+| `npm run dev` | démarre le front avec Vite |
+| `npm run build` | construit le front |
+| `npm run lint` | lint front + back (ESLint flat config) |
+| `npm run test` | exécute les tests Vitest côté front |
+| `npm run dev --prefix server` | démarre l’API (nodemon) |
+| `npm run prisma:migrate --prefix server` | migration Prisma |
+
+## Variables d’environnement
+
+### Front (`.env`)
+
+```
+VITE_API_BASE_URL=http://localhost:4000/api
+```
+
+### Back (`server/.env`)
+
+```
+PORT=4000
+NODE_ENV=development
+DATABASE_URL=postgresql://user:password@localhost:5432/open_facture
+JWT_SECRET=change-me-with-a-strong-secret-key-at-least-32-chars
+CLIENT_ORIGIN=http://localhost:5173
+ALLOWED_ORIGINS=
+COOKIE_SECURE=false
+COOKIE_SAME_SITE=lax
+```
+
+## Tests & CI
+
+- Vitest + Testing Library couvrent les utilitaires et composants critiques (`npm run test`).
+- Une pipeline GitHub Actions (`.github/workflows/ci.yml`) installe les deux projets, exécute ESLint et les tests front.
+
+## Points notables
+
+- L’API recalculent systématiquement les totaux / taxes et expose une pagination (`GET /api/invoices?page=1&limit=20`).
+- Les agrégations du tableau de bord sont disponibles via `GET /api/invoices/summary`.
+- Le téléversement du logo se fait via `POST /api/profile/logo` (payload JSON base64) et les fichiers sont servis via `/uploads/*`.
+- Les tokens sont invalidés lors de la déconnexion (rotation `tokenVersion`).
+
+Pour plus de détails sur l’API, voir `server/README.md`.

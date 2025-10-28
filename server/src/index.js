@@ -1,9 +1,7 @@
-import dotenv from 'dotenv'
 import app from './app.js'
+import { env } from './config/index.js'
 
-dotenv.config()
-
-const port = Number(process.env.PORT) || 4000
+const port = env.PORT
 
 app.listen(port, () => {
 	console.log(`Open Facture API listening on http://localhost:${port}`)

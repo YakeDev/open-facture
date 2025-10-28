@@ -1,59 +1,98 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { invoiceApi } from '../services/api'
+import { dashboardApi, invoiceApi } from '../services/api'
 
 export default function DashboardPage() {
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState(null)
-	const [invoices, setInvoices] = useState([])
+	const [summary, setSummary] = useState({
+		totalInvoices: 0,
+		totalAmount: 0,
+		totalPaid: 0,
+		totalOutstanding: 0,
+		recent: [],
+	})
 
 	useEffect(() => {
+		const controller = new AbortController()
 		let mounted = true
-		setLoading(true)
-		invoiceApi
-			.list()
-			.then((data) => {
+
+		const loadSummary = async () => {
+			setLoading(true)
+			try {
+				const data = await dashboardApi.summary({
+					signal: controller.signal,
+				})
 				if (!mounted) return
-				setInvoices(data?.invoices ?? [])
-			})
-			.catch((err) => {
-				if (!mounted) return
-				setError(err.message || 'Impossible de charger les factures.')
-			})
-			.finally(() => {
-				if (!mounted) return
-				setLoading(false)
-			})
+				setSummary({
+					totalInvoices: data?.summary?.totalInvoices ?? 0,
+					totalAmount: data?.summary?.totalAmount ?? 0,
+					totalPaid: data?.summary?.totalPaid ?? 0,
+					totalOutstanding: data?.summary?.totalOutstanding ?? 0,
+					recent: data?.summary?.recent ?? [],
+				})
+			} catch (err) {
+				if (!mounted || err?.name === 'AbortError') return
+				try {
+					const fallback = await invoiceApi.list({
+						signal: controller.signal,
+					})
+					if (!mounted) return
+					const invoices = fallback?.invoices ?? []
+					setSummary({
+						totalInvoices: invoices.length,
+						totalAmount: invoices.reduce(
+							(sum, invoice) => sum + Number(invoice.total || 0),
+							0
+						),
+						totalPaid: invoices.reduce(
+							(sum, invoice) => sum + Number(invoice.amountPaid || 0),
+							0
+						),
+						totalOutstanding: invoices.reduce(
+							(sum, invoice) => sum + Number(invoice.balanceDue || 0),
+							0
+						),
+						recent: invoices
+							.slice()
+							.sort(
+								(a, b) =>
+									new Date(b.issueDate).getTime() -
+									new Date(a.issueDate).getTime()
+							)
+							.slice(0, 5),
+					})
+					setError(null)
+				} catch (fallbackError) {
+					console.error('dashboard fallback failed', fallbackError)
+					setError(
+						err.message || 'Impossible de charger les indicateurs.'
+					)
+				}
+			} finally {
+				if (mounted) {
+					setLoading(false)
+				}
+			}
+		}
+
+		loadSummary()
 
 		return () => {
 			mounted = false
+			controller.abort()
 		}
 	}, [])
 
 	const stats = useMemo(() => {
-		const totalInvoices = invoices.length
-		const totalAmount = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
-		const totalPaid = invoices.reduce((sum, invoice) => sum + Number(invoice.amountPaid || 0), 0)
-		const totalOutstanding = invoices.reduce(
-			(sum, invoice) => sum + Number(invoice.balanceDue || 0),
-			0
-		)
-
-		const recent = [...invoices]
-			.sort(
-				(a, b) =>
-					new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime()
-			)
-			.slice(0, 5)
-
 		return {
-			totalInvoices,
-			totalAmount,
-			totalPaid,
-			totalOutstanding,
-			recent,
+			totalInvoices: summary.totalInvoices,
+			totalAmount: summary.totalAmount,
+			totalPaid: summary.totalPaid,
+			totalOutstanding: summary.totalOutstanding,
+			recent: summary.recent,
 		}
-	}, [invoices])
+	}, [summary])
 
 	if (loading) {
 		return (

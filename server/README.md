@@ -1,10 +1,10 @@
 # Open Facture API
 
-Backend Node.js qui accompagne l'application front-end React. Basé sur Express, Prisma et PostgreSQL.
+Backend Node.js (Express + Prisma + PostgreSQL) utilisé par l’interface React.
 
 ## Prérequis
 
-- Node.js 18+
+- Node.js 20+
 - PostgreSQL 14+
 
 ## Installation
@@ -13,41 +13,64 @@ Backend Node.js qui accompagne l'application front-end React. Basé sur Express,
 cd server
 npm install
 cp .env.example .env
+# éditer .env (DATABASE_URL, JWT_SECRET, CLIENT_ORIGIN…)
 ```
 
-Modifier `DATABASE_URL`, `JWT_SECRET` et `CLIENT_ORIGIN` dans `.env`.
-
-## Base de données
+### Base de données
 
 ```bash
 npx prisma generate
 npx prisma migrate dev --name init
+# optionnel : créer un admin
+npm run prisma:seed
 ```
 
-Pour explorer les données :
-
-```bash
-npx prisma studio
-```
-
-## Démarrage
+### Lancement
 
 ```bash
 npm run dev
 ```
 
-Le serveur écoute par défaut sur `http://localhost:4000`.
+- API : `http://localhost:4000/api`
+- Fichiers uploadés : `http://localhost:4000/uploads/*`
+
+## Variables d’environnement
+
+| Nom | Description |
+| --- | --- |
+| `PORT` | Port HTTP (défaut : 4000) |
+| `DATABASE_URL` | Connexion PostgreSQL |
+| `JWT_SECRET` | Clé de signature JWT (≥32 caractères) |
+| `CLIENT_ORIGIN` | Origine autorisée pour le front |
+| `ALLOWED_ORIGINS` | Liste supplémentaire séparée par des virgules |
+| `COOKIE_SECURE` | Force le cookie `Secure` (prod recommandé) |
+| `COOKIE_SAME_SITE` | Politique Same-Site (`lax`/`strict`/`none`) |
 
 ## Endpoints principaux
 
-- `POST /api/auth/register` – création de compte (retourne cookie de session)
-- `POST /api/auth/login` – connexion
-- `POST /api/auth/logout` – déconnexion
-- `GET /api/auth/me` – profil courant (token obligatoire)
-- `GET /api/invoices` – liste paginée des factures
-- `POST /api/invoices` – création
-- `GET /api/invoices/:id` – détail
-- `PUT /api/invoices/:id` – mise à jour
-- `DELETE /api/invoices/:id` – suppression
+| Méthode | Route | Description |
+| --- | --- | --- |
+| `POST` | `/api/auth/register` | Inscription + cookie de session |
+| `POST` | `/api/auth/login` | Connexion |
+| `POST` | `/api/auth/logout` | Déconnexion + rotation `tokenVersion` |
+| `GET` | `/api/auth/me` | Profil courant |
+| `GET` | `/api/invoices` | Liste paginée (`page`, `limit`) |
+| `GET` | `/api/invoices/summary` | Agrégations (totaux, dernières factures) |
+| `POST` | `/api/invoices` | Création de facture (totaux recalculés serveur) |
+| `GET` | `/api/invoices/:id` | Détail |
+| `PUT` | `/api/invoices/:id` | Mise à jour |
+| `DELETE` | `/api/invoices/:id` | Suppression |
+| `POST` | `/api/profile/logo` | Téléversement du logo utilisateur (JSON base64) |
 
-Toutes les routes `/api/invoices` nécessitent une authentification (cookie ou header `Authorization: Bearer`).
+Toutes les routes `/api/**` nécessitent une authentification (cookie ou header `Authorization: Bearer`).
+
+## Notes techniques
+
+- Les montants (`subtotal`, `total`, `balanceDue`, `taxAmount`) sont recalculés backend pour garantir l’intégrité.
+- Les requêtes supportent la pagination (`page`, `limit`, max 100). Les agrégations du dashboard s’effectuent via `/summary`.
+- Les tokens sont invalidés lorsque l’utilisateur se déconnecte (champ `tokenVersion`).
+- Les fichiers uploadés sont stockés dans `server/uploads` et servis statiquement via `/uploads`.
+
+## Tests
+
+Des tests front (Vitest) sont disponibles dans la racine du projet (`npm run test`). L’ajout de tests d’intégration backend est facilité par la factorisation des mappers (`server/src/lib`).
