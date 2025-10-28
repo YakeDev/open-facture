@@ -19,12 +19,12 @@ export default function ItemsTable({ items, setItems, currency }) {
 			<table className='w-full border-separate border-spacing-0 divide-y divide-gray-200'>
 				<thead className='bg-gray-800 text-white'>
 					<tr>
-						<th className='p-2 text-left border-b border-gray-200'>Item</th>
-						<th className='p-2 text-center border-b border-gray-200'>
-							Quantity
-						</th>
-						<th className='p-2 text-right border-b border-gray-200'>Rate</th>
-						<th className='p-2 text-right border-b border-gray-200'>Amount</th>
+		<th className='p-2 text-left border-b border-gray-200'>Ligne</th>
+		<th className='p-2 text-center border-b border-gray-200'>
+			Quantité
+		</th>
+		<th className='p-2 text-right border-b border-gray-200'>Tarif unitaire</th>
+		<th className='p-2 text-right border-b border-gray-200'>Montant</th>
 						<th className='p-2 border-b border-gray-200'></th>
 					</tr>
 				</thead>

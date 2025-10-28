@@ -81,10 +81,13 @@ export default function CurrencyRatesModal({
 						.filter((option) => option.code !== 'USD')
 						.map((option) => (
 							<div key={option.code}>
-								<label className='block text-sm font-medium text-gray-700'>
+								<label
+									className='block text-sm font-medium text-gray-700'
+									htmlFor={`rate-${option.code}`}>
 									{option.label}
 								</label>
 								<input
+									id={`rate-${option.code}`}
 									type='number'
 									step='0.000001'
 									min='0'

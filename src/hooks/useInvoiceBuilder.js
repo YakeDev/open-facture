@@ -40,6 +40,35 @@ const normalizeRates = (rates) => {
 	return safeRates
 }
 
+const defaultIssuer = {
+	companyName: '',
+	address: '',
+	phone: '',
+	email: '',
+	rccm: '',
+	idNat: '',
+	niu: '',
+	taxCentre: '',
+	bankName: '',
+	bankAccount: '',
+	swift: '',
+	other: '',
+}
+
+const sanitizeIssuer = (issuer) => {
+	if (!issuer || typeof issuer !== 'object') return null
+	const cleaned = {}
+	Object.keys(defaultIssuer).forEach((key) => {
+		const value = issuer[key]
+		if (value == null) return
+		const normalized = String(value).trim()
+		if (normalized.length) {
+			cleaned[key] = normalized
+		}
+	})
+	return Object.keys(cleaned).length ? cleaned : null
+}
+
 export default function useInvoiceBuilder() {
 	const { user, setUser } = useAuth()
 
@@ -75,6 +104,8 @@ export default function useInvoiceBuilder() {
 		shipTo: '',
 		email: '',
 		address: '',
+		clientPhone: '',
+		clientEmail: '',
 	})
 	const [dates, setDates] = useState({
 		date: '',
@@ -87,18 +118,29 @@ export default function useInvoiceBuilder() {
 		const parsed = parseStoredJson(stored)
 		return Array.isArray(parsed) ? parsed : []
 	})
-	const [notesTerms, setNotesTerms] = useState({ notes: '', terms: '' })
-	const [taxRate, setTaxRate] = useState(0)
-	const [amountPaid, setAmountPaid] = useState(0)
-	const [editingIndex, setEditingIndex] = useState(null)
-	const [history, setHistory] = useState(() => loadHistory())
-	const [loadingHistory, setLoadingHistory] = useState(false)
+const [notesTerms, setNotesTerms] = useState({ notes: '', terms: '' })
+const [taxRate, setTaxRate] = useState(0)
+const [amountPaid, setAmountPaid] = useState(0)
+const [editingIndex, setEditingIndex] = useState(null)
+const [history, setHistory] = useState(() => loadHistory())
+const [loadingHistory, setLoadingHistory] = useState(false)
+const [issuer, setIssuer] = useState(() => {
+	const stored = localStorage.getItem('issuerLegalInfo')
+	const parsed = parseStoredJson(stored)
+	return parsed && typeof parsed === 'object'
+		? { ...defaultIssuer, ...parsed }
+		: { ...defaultIssuer }
+})
 
 	useEffect(() => {
-		if (user?.logoUrl && !logo) {
-			setLogo(user.logoUrl)
-		}
-	}, [user?.logoUrl, logo])
+	if (user?.logoUrl && !logo) {
+		setLogo(user.logoUrl)
+	}
+}, [user?.logoUrl, logo])
+
+useEffect(() => {
+	localStorage.setItem('issuerLegalInfo', JSON.stringify(issuer))
+}, [issuer])
 
 	const currency = useMemo(
 		() => getCurrencyMeta(currencyCode),
@@ -262,12 +304,16 @@ export default function useInvoiceBuilder() {
 			pendingCurrencyHydrationRef.current = normalizedCurrencyCode
 			setCurrencyCode(normalizedCurrencyCode)
 
+			setIssuer({ ...defaultIssuer, ...(entry.issuerLegal || {}) })
+
 			setClientData({
 				issuer: entry.client?.issuer ?? entry.issuer ?? entry.customer ?? '',
 				billTo: entry.client?.billTo ?? entry.billTo ?? entry.customer ?? '',
 				shipTo: entry.client?.shipTo ?? entry.shipTo ?? '',
 				email: entry.customerEmail ?? entry.customer_email ?? '',
 				address: entry.customerAddress ?? entry.customer_address ?? '',
+				clientPhone: entry.clientPhone ?? entry.phone ?? '',
+				clientEmail: entry.clientEmail ?? entry.email ?? '',
 			})
 
 			setDates({
@@ -402,7 +448,8 @@ export default function useInvoiceBuilder() {
 			const dueDateISO = dates.dueDate
 				? new Date(dates.dueDate).toISOString()
 				: undefined
-			const customerName = clientData.billTo || clientData.issuer || 'Client'
+		const customerName = clientData.billTo || clientData.issuer || 'Client'
+		const issuerLegalPayload = sanitizeIssuer(issuer)
 
 			const itemsForApi = items.map((item, idx) => ({
 				description: item.description || `Item ${idx + 1}`,
@@ -411,17 +458,19 @@ export default function useInvoiceBuilder() {
 				amount: Number(item.quantity ?? 0) * Number(item.rate ?? 0),
 			}))
 
-			const invoicePayload = {
-				number: invoiceNumber,
-				title: undefined,
-				issueDate: issueDateISO,
-				dueDate: dueDateISO,
-				terms: dates.terms?.trim() || undefined,
-				customerName,
-				customerEmail: clientData.email?.trim() || undefined,
-				customerAddress: clientData.address?.trim() || undefined,
-				shipTo: clientData.shipTo?.trim() || undefined,
-				currency: currency.code,
+		const invoicePayload = {
+			number: invoiceNumber,
+			title: undefined,
+			issueDate: issueDateISO,
+			dueDate: dueDateISO,
+			terms: dates.terms?.trim() || undefined,
+			customerName,
+			customerEmail: clientData.email?.trim() || undefined,
+			customerAddress: clientData.address?.trim() || undefined,
+			shipTo: clientData.shipTo?.trim() || undefined,
+			clientPhone: clientData.clientPhone?.trim() || undefined,
+			clientContactEmail: clientData.clientEmail?.trim() || undefined,
+			currency: currency.code,
 				subtotal: subtotalValue,
 				taxRate,
 				taxAmount: taxValue,
@@ -431,9 +480,10 @@ export default function useInvoiceBuilder() {
 				notes: notesTerms.notes?.trim() || undefined,
 				additionalTerms: notesTerms.terms?.trim() || undefined,
 				currencyUsdRate,
-				exchangeRatesSnapshot,
-				items: itemsForApi,
-			}
+			exchangeRatesSnapshot,
+		issuerLegal: issuerLegalPayload || undefined,
+			items: itemsForApi,
+		}
 
 			const itemsForLocal = items.map((item, idx) => ({
 				id: String(item.id ?? `${Date.now()}-${idx}`),
@@ -480,39 +530,45 @@ export default function useInvoiceBuilder() {
 			}
 
 			if (existing) {
-				currentHistory[editingIndex] = {
-					...existing,
-					...invoicePayload,
-					date: invoicePayload.issueDate
-						? invoicePayload.issueDate.slice(0, 10)
-						: '',
-					due_date: invoicePayload.dueDate
-						? invoicePayload.dueDate.slice(0, 10)
-						: '',
-					items: itemsForLocal,
-					total: totalValue,
-					amountPaid: amountPaidValue,
-					balanceDue: balanceDueValue,
-					updatedAt: timestamp,
-					createdAt: existing.createdAt ?? timestamp,
-				}
+			currentHistory[editingIndex] = {
+				...existing,
+				...invoicePayload,
+				date: invoicePayload.issueDate
+					? invoicePayload.issueDate.slice(0, 10)
+					: '',
+				due_date: invoicePayload.dueDate
+					? invoicePayload.dueDate.slice(0, 10)
+					: '',
+				items: itemsForLocal,
+				total: totalValue,
+				amountPaid: amountPaidValue,
+				balanceDue: balanceDueValue,
+				issuerLegal: issuerLegalPayload || existing.issuerLegal || null,
+				clientPhone: clientData.clientPhone ?? '',
+				clientEmail: clientData.clientEmail ?? '',
+				updatedAt: timestamp,
+				createdAt: existing.createdAt ?? timestamp,
+			}
 			} else {
-				currentHistory.push({
-					id: `${Date.now()}`,
-					...invoicePayload,
-					date: invoicePayload.issueDate
-						? invoicePayload.issueDate.slice(0, 10)
-						: '',
-					due_date: invoicePayload.dueDate
-						? invoicePayload.dueDate.slice(0, 10)
-						: '',
-					items: itemsForLocal,
-					total: totalValue,
-					amountPaid: amountPaidValue,
-					balanceDue: balanceDueValue,
-					createdAt: timestamp,
-					updatedAt: timestamp,
-				})
+			currentHistory.push({
+				id: `${Date.now()}`,
+				...invoicePayload,
+				date: invoicePayload.issueDate
+					? invoicePayload.issueDate.slice(0, 10)
+					: '',
+				due_date: invoicePayload.dueDate
+					? invoicePayload.dueDate.slice(0, 10)
+					: '',
+				items: itemsForLocal,
+				total: totalValue,
+				amountPaid: amountPaidValue,
+				balanceDue: balanceDueValue,
+				issuerLegal: issuerLegalPayload || null,
+				clientPhone: clientData.clientPhone ?? '',
+				clientEmail: clientData.clientEmail ?? '',
+				createdAt: timestamp,
+				updatedAt: timestamp,
+			})
 				setInvoiceNumber(formatInvoiceNumber(currentHistory.length + 1))
 			}
 
@@ -525,19 +581,20 @@ export default function useInvoiceBuilder() {
 			subtotal,
 			tax,
 			total,
-			amountPaid,
-			balanceDue,
-			usdRates,
-			currency.code,
-			dates,
-			clientData,
-			items,
-			invoiceNumber,
-			taxRate,
-			notesTerms,
-			syncHistoryFromServer,
-		]
-	)
+		amountPaid,
+		balanceDue,
+		usdRates,
+		currency.code,
+		dates,
+		clientData,
+		items,
+		invoiceNumber,
+		taxRate,
+		notesTerms,
+		syncHistoryFromServer,
+		issuer,
+	]
+)
 
 	return {
 		state: {
@@ -551,12 +608,13 @@ export default function useInvoiceBuilder() {
 			clientData,
 			dates,
 			items,
-			notesTerms,
-			taxRate,
-			amountPaid,
-			editingIndex,
-			history,
-			loadingHistory,
+		notesTerms,
+		taxRate,
+		amountPaid,
+		editingIndex,
+		history,
+		loadingHistory,
+		issuer,
 		},
 		derived: {
 			currency,
@@ -574,10 +632,11 @@ export default function useInvoiceBuilder() {
 			setLogo,
 			setCurrencyCode,
 			saveDefaultCurrency,
-			updateCustomRates,
-			uploadLogo,
-			setClientData,
-			setDates,
+		updateCustomRates,
+		uploadLogo,
+		setClientData,
+		setIssuer,
+		setDates,
 			setItems,
 			setNotesTerms,
 			setTaxRate,

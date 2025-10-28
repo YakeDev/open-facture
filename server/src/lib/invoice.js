@@ -23,6 +23,20 @@ const sanitizeString = (value) => {
 	return trimmed.length ? trimmed : null
 }
 
+const sanitizeObjectStrings = (data, keys) => {
+	if (!data || typeof data !== 'object') return null
+	const cleaned = {}
+	keys.forEach((key) => {
+		const value = data[key]
+		if (value == null) return
+		const normalized = String(value).trim()
+		if (normalized.length) {
+			cleaned[key] = normalized
+		}
+	})
+	return Object.keys(cleaned).length ? cleaned : null
+}
+
 const assertNonNegative = (value, field) => {
 	if (!Number.isFinite(value) || value < 0) {
 		throw unprocessable(`Le champ ${field} doit être positif`, {
@@ -66,6 +80,7 @@ export const mapInvoice = (invoice) => ({
 		unitCost: Number(item.unitCost),
 		amount: Number(item.amount),
 	})),
+	issuerLegal: invoice.issuerLegalInfo ?? null,
 })
 
 export const mapInvoices = (invoices) => invoices.map(mapInvoice)
@@ -144,6 +159,21 @@ export const buildInvoiceData = (payload, userId) => {
 		)
 	}
 
+	const issuerLegal = sanitizeObjectStrings(payload.issuerLegal, [
+		'companyName',
+		'address',
+		'phone',
+		'email',
+		'rccm',
+		'idNat',
+		'niu',
+		'taxCentre',
+		'bankName',
+		'bankAccount',
+		'swift',
+		'other',
+	])
+
 	return {
 		data: {
 			userId,
@@ -169,6 +199,7 @@ export const buildInvoiceData = (payload, userId) => {
 			currencyUsdRate:
 				currencyUsdRate != null ? toDecimal(currencyUsdRate, RATE_SCALE) : null,
 			exchangeRatesSnapshot: payload.exchangeRatesSnapshot ?? null,
+			issuerLegalInfo: issuerLegal,
 			items: {
 				create: items.map((item) => ({
 					description: item.description,

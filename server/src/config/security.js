@@ -43,8 +43,10 @@ export const helmetOptions = isProduction
 				},
 			},
 			crossOriginEmbedderPolicy: false,
+			crossOriginResourcePolicy: { policy: 'cross-origin' },
 	  }
 	: {
 			contentSecurityPolicy: false,
 			crossOriginEmbedderPolicy: false,
+			crossOriginResourcePolicy: { policy: 'cross-origin' },
 	  }
