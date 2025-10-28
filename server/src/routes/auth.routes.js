@@ -1,9 +1,16 @@
 import { Router } from 'express'
-import bcrypt from 'bcryptjs'
+import bcrypt from 'bcrypt'
 import prisma from '../lib/prisma.js'
-import { createToken, setAuthCookie, clearAuthCookie } from '../utils/token.js'
+import {
+	createToken,
+	setAuthCookie,
+	clearAuthCookie,
+	getTokenFromRequest,
+	verifyToken,
+} from '../utils/token.js'
 import { registerSchema, loginSchema } from '../schemas/auth.js'
 import { requireAuth } from '../middleware/requireAuth.js'
+import { invalidateUserSessions } from '../lib/auth.js'
 
 const router = Router()
 
@@ -42,8 +49,11 @@ router.post('/register', async (req, res) => {
 			},
 		})
 
-		const token = createToken({ userId: user.id })
-		setAuthCookie(res, token)
+			const token = createToken({
+				userId: user.id,
+				tokenVersion: user.tokenVersion,
+			})
+			setAuthCookie(res, token)
 
 		return res.status(201).json({ user: mapUser(user) })
 	} catch (error) {
@@ -73,7 +83,10 @@ router.post('/login', async (req, res) => {
 			return res.status(401).json({ error: 'Identifiants invalides.' })
 		}
 
-		const token = createToken({ userId: user.id })
+			const token = createToken({
+				userId: user.id,
+				tokenVersion: user.tokenVersion,
+			})
 		setAuthCookie(res, token)
 
 		return res.json({ user: mapUser(user) })
@@ -86,7 +99,16 @@ router.post('/login', async (req, res) => {
 	}
 })
 
-router.post('/logout', (_req, res) => {
+router.post('/logout', async (req, res) => {
+	const token = getTokenFromRequest(req)
+	if (token) {
+	try {
+		const decoded = verifyToken(token)
+		await invalidateUserSessions(decoded.userId)
+	} catch {
+		// ignore invalid token
+	}
+	}
 	clearAuthCookie(res)
 	return res.status(204).send()
 })

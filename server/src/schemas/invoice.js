@@ -10,11 +10,16 @@ const invoiceItemSchema = z.object({
 	amount: z.number().nonnegative().optional(),
 })
 
+const isoDateSchema = z
+	.string()
+	.datetime({ offset: true })
+	.transform((value) => new Date(value))
+
 export const invoicePayloadSchema = z.object({
 	number: z.string().min(1),
 	title: z.string().optional(),
-	issueDate: z.coerce.date(),
-	dueDate: z.coerce.date().optional(),
+	issueDate: isoDateSchema,
+	dueDate: isoDateSchema.optional(),
 	terms: z.string().optional(),
 	customerName: z.string().min(1),
 	customerEmail: z.string().email().optional().or(z.literal('')),

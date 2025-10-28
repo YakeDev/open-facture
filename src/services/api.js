@@ -1,15 +1,39 @@
 const API_BASE_URL =
-	import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
+	(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api').replace(
+		/\/$/,
+		''
+	)
 
-const request = async (path, { method = 'GET', body, headers, ...rest } = {}) => {
-	const response = await fetch(`${API_BASE_URL}${path}`, {
+const buildUrl = (path, params) => {
+	const normalizedPath = path.startsWith('/') ? path : `/${path}`
+	const url = new URL(`${API_BASE_URL}${normalizedPath}`)
+
+	if (params) {
+		Object.entries(params).forEach(([key, value]) => {
+			if (value === undefined || value === null || value === '') return
+			url.searchParams.set(key, value)
+		})
+	}
+
+	return url.toString()
+}
+
+const request = async (
+	path,
+	{ method = 'GET', body, headers, params, signal, ...rest } = {}
+) => {
+	const response = await fetch(buildUrl(path, params), {
 		method,
 		headers: {
 			'Content-Type': 'application/json',
 			...headers,
 		},
-		body: body ? JSON.stringify(body) : undefined,
+		body:
+			body != null && method !== 'GET' && method !== 'HEAD'
+				? JSON.stringify(body)
+				: undefined,
 		credentials: 'include',
+		signal,
 		...rest,
 	})
 
@@ -44,26 +68,36 @@ const request = async (path, { method = 'GET', body, headers, ...rest } = {}) =>
 	try {
 		return await response.json()
 	} catch {
-		return null
+		return undefined
 	}
 }
 
 export const authApi = {
-	register: (payload) => request('/auth/register', { method: 'POST', body: payload }),
-	login: (payload) => request('/auth/login', { method: 'POST', body: payload }),
-	logout: () => request('/auth/logout', { method: 'POST' }),
-	me: () => request('/auth/me'),
+	register: (payload, options) =>
+		request('/auth/register', { method: 'POST', body: payload, ...options }),
+	login: (payload, options) =>
+		request('/auth/login', { method: 'POST', body: payload, ...options }),
+	logout: (options) => request('/auth/logout', { method: 'POST', ...options }),
+	me: (options) => request('/auth/me', options),
 }
 
 export const invoiceApi = {
-	list: () => request('/invoices'),
-	create: (payload) => request('/invoices', { method: 'POST', body: payload }),
-	update: (id, payload) =>
-		request(`/invoices/${id}`, { method: 'PUT', body: payload }),
-	remove: (id) => request(`/invoices/${id}`, { method: 'DELETE' }),
-	get: (id) => request(`/invoices/${id}`),
+	list: (options) => request('/invoices', options),
+	create: (payload, options) =>
+		request('/invoices', { method: 'POST', body: payload, ...options }),
+	update: (id, payload, options) =>
+		request(`/invoices/${id}`, { method: 'PUT', body: payload, ...options }),
+	remove: (id, options) =>
+		request(`/invoices/${id}`, { method: 'DELETE', ...options }),
+	get: (id, options) => request(`/invoices/${id}`, options),
+	summary: (options) => request('/invoices/summary', options),
 }
 
 export const dashboardApi = {
-	summary: () => request('/invoices?summary=true'),
+	summary: (options) => invoiceApi.summary(options),
+}
+
+export const profileApi = {
+	uploadLogo: (payload, options) =>
+		request('/profile/logo', { method: 'POST', body: payload, ...options }),
 }

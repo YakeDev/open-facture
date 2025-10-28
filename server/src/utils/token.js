@@ -1,32 +1,24 @@
 import jwt from 'jsonwebtoken'
+import { cookieOptions, env } from '../config/index.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 const TOKEN_COOKIE = 'open_facture_token'
-const TOKEN_TTL = 1000 * 60 * 60 * 24 * 7 // 7 days
+const TOKEN_EXPIRATION = '7d'
 
-const isProd = process.env.NODE_ENV === 'production'
-const sameSitePolicy = isProd ? 'none' : 'lax'
-const secureCookie = isProd
+export const createToken = ({ userId, tokenVersion }) =>
+	jwt.sign({ userId, tokenVersion }, env.JWT_SECRET, {
+		expiresIn: TOKEN_EXPIRATION,
+	})
 
-export const createToken = (payload) =>
-	jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
-
-export const verifyToken = (token) => jwt.verify(token, JWT_SECRET)
+export const verifyToken = (token) => jwt.verify(token, env.JWT_SECRET)
 
 export const setAuthCookie = (res, token) => {
-	res.cookie(TOKEN_COOKIE, token, {
-		httpOnly: true,
-		secure: secureCookie,
-		sameSite: sameSitePolicy,
-		maxAge: TOKEN_TTL,
-	})
+	res.cookie(TOKEN_COOKIE, token, cookieOptions)
 }
 
 export const clearAuthCookie = (res) => {
 	res.clearCookie(TOKEN_COOKIE, {
-		httpOnly: true,
-		secure: secureCookie,
-		sameSite: sameSitePolicy,
+		...cookieOptions,
+		maxAge: undefined,
 	})
 }
 

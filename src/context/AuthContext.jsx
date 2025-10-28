@@ -8,16 +8,18 @@ export function AuthProvider({ children }) {
 	const [error, setError] = useState(null)
 
 	useEffect(() => {
+		const controller = new AbortController()
 		let mounted = true
+
 		authApi
-			.me()
+			.me({ signal: controller.signal })
 			.then((data) => {
 				if (!mounted) return
 				setUser(data?.user ?? null)
 				setError(null)
 			})
-			.catch(() => {
-				if (!mounted) return
+			.catch((err) => {
+				if (!mounted || err?.name === 'AbortError') return
 				setUser(null)
 			})
 			.finally(() => {
@@ -27,6 +29,7 @@ export function AuthProvider({ children }) {
 
 		return () => {
 			mounted = false
+			controller.abort()
 		}
 	}, [])
 
@@ -58,8 +61,9 @@ export function AuthProvider({ children }) {
 			register,
 			logout,
 			setError,
+			setUser,
 		}),
-		[user, loading, error, login, register, logout]
+		[user, loading, error, login, register, logout, setError, setUser]
 	)
 
 	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
