@@ -4,7 +4,7 @@ import {
 	useNavigate,
 } from 'react-router-dom'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import LogoUpload from '../components/LogoUpload'
 import ClientInfo from '../components/ClientInfo'
 import DatesInfo from '../components/DatesInfo'
@@ -119,8 +119,8 @@ export default function InvoiceBuilderPage() {
 		y += 90
 
 		doc.setFontSize(14)
-		doc.text('Facturé à', margin, y)
-		doc.text('Livrer à', pageW / 2, y)
+		doc.text('Destinataire', margin, y)
+		doc.text('Adresse de livraison', pageW / 2, y)
 		doc.setFontSize(12)
 		y += 20
 
@@ -130,9 +130,9 @@ export default function InvoiceBuilderPage() {
 		})
 		y += 40
 
-		doc.autoTable({
+		autoTable(doc, {
 			startY: y,
-			head: [['Date', 'Modalités', 'Échéance', 'PO']],
+			head: [['Date', 'Modalités', 'Échéance', 'N° commande']],
 			body: [
 				[
 					dates.date || '-',
@@ -151,7 +151,7 @@ export default function InvoiceBuilderPage() {
 			formatCurrency(item.rate || 0),
 			formatCurrency((item.quantity || 0) * (item.rate || 0)),
 		])
-		doc.autoTable({
+		autoTable(doc, {
 			startY: y,
 			head: [['Description', 'Qté', 'Tarif', 'Montant']],
 			body: tableBody,
@@ -184,16 +184,16 @@ export default function InvoiceBuilderPage() {
 		})
 		y += 100
 
-		doc.text('Notes:', margin, y)
+		doc.text('Notes :', margin, y)
 		doc.text(notesTerms.notes || '-', margin + 40, y, {
 			maxWidth: pageW - margin * 2 - 40,
 		})
-		doc.text('Conditions:', margin, y + 15)
+		doc.text('Conditions :', margin, y + 15)
 		doc.text(notesTerms.terms || '-', margin + 40, y + 15, {
 			maxWidth: pageW - margin * 2 - 40,
 		})
 
-		doc.save(`invoice_${invoiceNumber}.pdf`)
+		doc.save(`facture_${invoiceNumber}.pdf`)
 		await finalizeInvoice()
 	}
 
@@ -204,7 +204,7 @@ export default function InvoiceBuilderPage() {
 					<div className='flex justify-between items-start mb-6'>
 			<LogoUpload logo={logo} onUpload={uploadLogo} />
 						<div className='text-right'>
-							<h1 className='text-3xl font-bold'>INVOICE</h1>
+					<h1 className='text-3xl font-bold'>FACTURE</h1>
 							<div className='mt-2 flex justify-end items-center'>
 								<label className='w-8 text-sm text-gray-600 mr-2'>#</label>
 								<input

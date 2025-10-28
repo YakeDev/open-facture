@@ -14,7 +14,7 @@ export default function SummaryPanel({
 	return (
 		<div className='bg-white p-4 rounded shadow border border-gray-200'>
 			<div className='flex justify-between mb-2 border-b border-gray-200 pb-2'>
-				<span>Subtotal</span>
+		<span>Sous-total</span>
 				<span>
 					{subtotal.toFixed(2).replace('.', ',')} {symbol}
 				</span>
@@ -38,7 +38,7 @@ export default function SummaryPanel({
 				</span>
 			</div>
 			<div className='flex justify-between items-center mb-2'>
-				<span>Payé</span>
+		<span>Montant payé</span>
 				<input
 					type='number'
 					value={amountPaid}

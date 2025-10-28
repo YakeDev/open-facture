@@ -14,8 +14,8 @@ export default function ClientInfo({ data, onChange }) {
 				className='w-full border border-gray-200 p-2 rounded mb-4'
 			/>
 			<div className='grid md:grid-cols-2 gap-4'>
-				<div>
-					<label className='block text-sm text-gray-500 mb-1'>Bill To</label>
+		<div>
+			<label className='block text-sm text-gray-500 mb-1'>Destinataire</label>
 					<input
 						type='text'
 						value={data.billTo}
@@ -23,10 +23,10 @@ export default function ClientInfo({ data, onChange }) {
 						className='w-full border border-gray-200 p-2 rounded'
 					/>
 				</div>
-				<div>
-					<label className='block text-sm text-gray-500 mb-1'>
-						Ship To (facultatif)
-					</label>
+		<div>
+			<label className='block text-sm text-gray-500 mb-1'>
+				Adresse de livraison (facultative)
+			</label>
 					<input
 						type='text'
 						value={data.shipTo}

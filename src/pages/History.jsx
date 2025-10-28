@@ -169,7 +169,7 @@ export default function HistoryPage() {
 		const url = URL.createObjectURL(blob)
 		const anchor = document.createElement('a')
 		anchor.href = url
-		anchor.download = `Invoices_${new Date().toISOString().slice(0, 10)}.csv`
+		anchor.download = `Factures_${new Date().toISOString().slice(0, 10)}.csv`
 		document.body.appendChild(anchor)
 		anchor.click()
 		document.body.removeChild(anchor)

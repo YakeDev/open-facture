@@ -32,15 +32,15 @@ function AppHeader({ userEmail, onLogout }) {
 							}>
 							Créer
 						</NavLink>
-						<NavLink
-							to='/dashboard'
-							className={({ isActive }) =>
-								isActive
-									? 'text-green-600'
-									: 'text-gray-600 hover:text-green-600'
-							}>
-							Dashboard
-						</NavLink>
+				<NavLink
+					to='/dashboard'
+					className={({ isActive }) =>
+						isActive
+							? 'text-green-600'
+							: 'text-gray-600 hover:text-green-600'
+					}>
+					Tableau de bord
+				</NavLink>
 						<NavLink
 							to='/history'
 							className={({ isActive }) =>
