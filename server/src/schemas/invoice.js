@@ -36,5 +36,21 @@ export const invoicePayloadSchema = z.object({
 	additionalTerms: z.string().optional(),
 	currencyUsdRate: z.number().min(0).optional(),
 	exchangeRatesSnapshot: z.record(z.any()).optional(),
+	issuerLegal: z
+		.object({
+			companyName: z.string().optional(),
+			address: z.string().optional(),
+			phone: z.string().optional(),
+			email: z.string().email().optional(),
+			rccm: z.string().optional(),
+			idNat: z.string().optional(),
+			niu: z.string().optional(),
+			taxCentre: z.string().optional(),
+			bankName: z.string().optional(),
+			bankAccount: z.string().optional(),
+			swift: z.string().optional(),
+			other: z.string().optional(),
+		})
+		.optional(),
 	items: z.array(invoiceItemSchema).min(1),
 })

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import sharp from 'sharp'
 import prisma from '../lib/prisma.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import {
@@ -16,10 +17,18 @@ const SUPPORTED_MIME_TYPES = new Set([
 	'image/jpeg',
 	'image/jpg',
 	'image/webp',
-	'image/svg+xml',
 ])
 
 const router = Router()
+
+const normalizePng = async (buffer) => {
+	try {
+		return await sharp(buffer).png().toBuffer()
+	} catch (error) {
+		console.warn('logo normalize error', error)
+		throw badRequest('Image PNG invalide ou corrompue.')
+	}
+}
 
 router.use(requireAuth)
 
@@ -47,26 +56,35 @@ router.post('/logo', async (req, res, next) => {
 			})
 		}
 
-		const base64 = matches[2]
-		const buffer = Buffer.from(base64, 'base64')
-		const maxSize = 1024 * 1024 * 2 // 2MB
-		if (buffer.length > maxSize) {
-			throw unprocessable('Le fichier dépasse 2 Mo.', {
-				error: [
-					{
-						path: ['logo'],
-						message: 'Le fichier ne doit pas dépasser 2 Mo.',
-					},
-				],
-			})
-		}
+	let buffer
+	try {
+		buffer = Buffer.from(matches[2], 'base64')
+	} catch {
+		throw badRequest('Image encodée invalide.')
+	}
+	const maxSize = 1024 * 1024 * 2 // 2MB
+	if (buffer.length > maxSize) {
+		throw unprocessable('Le fichier dépasse 2 Mo.', {
+			error: [
+			{
+				path: ['logo'],
+				message: 'Le fichier ne doit pas dépasser 2 Mo.',
+			},
+		],
+		})
+	}
+
+	let normalizedBuffer = buffer
+	if (mimeType === 'image/png') {
+		normalizedBuffer = await normalizePng(buffer)
+	}
 
 		await fs.mkdir(uploadsDir, { recursive: true })
 
 		const extension = mimeType.split('/')[1] || 'png'
 		const fileName = `${req.user.id}-${Date.now()}-${crypto.randomUUID()}.${extension}`
-		const filePath = path.join(uploadsDir, fileName)
-		await fs.writeFile(filePath, buffer)
+	const filePath = path.join(uploadsDir, `${fileName}.png`)
+	await fs.writeFile(filePath, normalizedBuffer)
 
 		const previous = await prisma.user.findUnique({
 			where: { id: req.user.id },
@@ -78,7 +96,7 @@ router.post('/logo', async (req, res, next) => {
 			fs.unlink(oldPath).catch(() => {})
 		}
 
-		const publicPath = `/uploads/${fileName}`
+	const publicPath = `/uploads/${fileName}.png`
 		await prisma.user.update({
 			where: { id: req.user.id },
 			data: { logoUrl: publicPath },

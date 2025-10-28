@@ -60,6 +60,7 @@ model Invoice {
   additionalTerms        String?
   currencyUsdRate        Decimal?   @db.Decimal(12, 6)
   exchangeRatesSnapshot  Json?
+  issuerLegalInfo        Json?
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
 

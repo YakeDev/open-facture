@@ -115,12 +115,21 @@ export default function HistoryPage() {
 							? quantity * unitCost
 							: ''
 
-				rows.push({
-					customer: inv.customer ?? '',
-					issuer: inv.client?.issuer ?? inv.issuer ?? '',
-					bill_to: inv.client?.billTo ?? inv.billTo ?? '',
-					ship_to: inv.client?.shipTo ?? inv.shipTo ?? '',
-					type: inv.type ?? '',
+		rows.push({
+			customer: inv.customer ?? '',
+			issuer: inv.client?.issuer ?? inv.issuer ?? '',
+			bill_to: inv.client?.billTo ?? inv.billTo ?? '',
+			ship_to: inv.client?.shipTo ?? inv.shipTo ?? '',
+			issuer_company: inv.issuerLegal?.companyName ?? '',
+			issuer_address: inv.issuerLegal?.address ?? '',
+			issuer_rccm: inv.issuerLegal?.rccm ?? '',
+			issuer_id_nat: inv.issuerLegal?.idNat ?? '',
+			issuer_niu: inv.issuerLegal?.niu ?? '',
+			issuer_tax_centre: inv.issuerLegal?.taxCentre ?? '',
+			issuer_bank: inv.issuerLegal?.bankName ?? '',
+			issuer_account: inv.issuerLegal?.bankAccount ?? '',
+			issuer_swift: inv.issuerLegal?.swift ?? '',
+			type: inv.type ?? '',
 					number: inv.number ?? '',
 					date: inv.date ?? '',
 					due_date: inv.due_date ?? '',

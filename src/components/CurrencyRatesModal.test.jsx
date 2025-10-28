@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import React from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import CurrencyRatesModal from './CurrencyRatesModal.jsx'
 
@@ -8,7 +9,7 @@ const currencyOptions = [
 ]
 
 describe('CurrencyRatesModal', () => {
-  it('validates positive numbers before submitting', () => {
+  it('validates positive numbers before submitting', async () => {
     const handleSubmit = vi.fn()
     render(
       <CurrencyRatesModal
@@ -24,13 +25,15 @@ describe('CurrencyRatesModal', () => {
     fireEvent.change(eurInput, { target: { value: '-1' } })
     fireEvent.click(screen.getByRole('button', { name: /enregistrer/i }))
 
-    expect(handleSubmit).not.toHaveBeenCalled()
-    expect(
-      screen.getByText(/doit être un nombre positif/i)
-    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(handleSubmit).not.toHaveBeenCalled()
+      expect(
+        screen.getByText(/doit être un nombre positif/i)
+      ).toBeInTheDocument()
+    })
   })
 
-  it('submits sanitized rates', () => {
+  it('submits sanitized rates', async () => {
     const handleSubmit = vi.fn()
     render(
       <CurrencyRatesModal
@@ -46,6 +49,8 @@ describe('CurrencyRatesModal', () => {
     fireEvent.change(eurInput, { target: { value: '1.234567' } })
     fireEvent.click(screen.getByRole('button', { name: /enregistrer/i }))
 
-    expect(handleSubmit).toHaveBeenCalledWith({ EUR: 1.234567 })
+    await waitFor(() => {
+      expect(handleSubmit).toHaveBeenCalledWith({ EUR: 1.234567 })
+    })
   })
 })
